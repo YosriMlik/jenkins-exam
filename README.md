@@ -3,7 +3,7 @@
 ```
 mvn spring-boot:run
 ```
-The Spring Boot Server will export API at port `8081`.
+The Spring Boot Server will export API at port `8081`..
 
 ## Run Angular Client
 ```
