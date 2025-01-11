@@ -12,6 +12,9 @@ services:
       - app-network
 
   spring-boot-app:
+    build:
+      context: ./spring-boot-server  # Path to the directory containing the Dockerfile
+      dockerfile: Dockerfile         # Name of the Dockerfile
     image: yosrimlik/jenkins-exam-backend:latest
     container_name: spring-boot-app
     ports:
@@ -31,4 +34,4 @@ services:
 
 networks:
   app-network:
-    driver: bridge
+    driver: bridge  

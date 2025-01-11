@@ -32,8 +32,9 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'ls'
-                sh 'docker-compose build' // Build the Docker image using docker-compose
+                dir('.') {  // Ensure we are in the root directory
+                    sh 'docker-compose build' // Build the Docker image using docker-compose
+                }
             }
         }
 
