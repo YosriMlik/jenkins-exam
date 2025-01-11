@@ -1,0 +1,163 @@
+pipeline {
+    agent any
+
+    tools {
+        jdk 'JDK'
+        maven 'Maven 3.9.9'
+    }
+
+
+    environment {
+        DOCKER_IMAGE_NAME = 'yosrimlik/jenkins-exam-backend' // Docker Hub image name
+        DOCKER_IMAGE_TAG = 'latest' // Docker image tag
+        DOCKER_COMPOSE_PATH = '.' // Docker Compose file is in the project root
+        REMOTE_USER = 'ubuntu-server' // Remote server username
+        REMOTE_HOST = '192.168.11.132' // Remote server IP or hostname -
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/YosriMlik/spring-boot-first.git' // Your Git repo URL
+            }
+        }
+
+        stage('Build Maven Project') {
+            steps {
+                sh 'mvn clean package -DskipTests'  // Build the Spring Boot application
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker-compose build' // Build the Docker image using docker-compose
+            }
+        }
+
+        stage('Push Docker Image to Docker Hub') {
+            steps {
+                echo "Pushing images"
+                sh "ls"
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_HUB_USER', passwordVariable: 'DOCKER_HUB_PASSWORD')]) {
+                    sh '''
+                        echo "$DOCKER_HUB_PASSWORD" | docker login -u "$DOCKER_HUB_USER" --password-stdin
+                        docker-compose push
+                    '''
+                }
+            }
+        }
+
+        stage('Cleanup Old Containers and Images') {
+            steps {
+                echo 'Cleaning up old Docker containers and images...'
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: 'vm2-ssh', // Use the ID of the SSH credentials
+                    keyFileVariable: 'SSH_KEY'
+                )]) {
+                    script {
+                        def cleanupScript = """
+                            # Stop and remove any running containers using ports 3306 or 8083
+                            CONTAINERS_USING_PORTS=\$(docker ps --filter "publish=3306" --filter "publish=8083" -q)
+                            if [ -n "\$CONTAINERS_USING_PORTS" ]; then
+                                docker stop \$CONTAINERS_USING_PORTS
+                                docker rm \$CONTAINERS_USING_PORTS
+                            fi
+
+                            # Remove any containers associated with the services in the docker-compose file
+                            CONTAINERS_TO_REMOVE=\$(docker ps -aq --filter name=mysql-db --filter name=spring-boot-app)
+                            if [ -n "\$CONTAINERS_TO_REMOVE" ]; then
+                                docker rm -f \$CONTAINERS_TO_REMOVE
+                            fi
+
+                            # Remove unused Docker images related to your services
+                            docker rmi -f yosrimlik/spring-boot-first:latest || true
+
+                            # Clean up unused volumes and networks
+                            docker volume prune -f
+                            docker network prune -f
+                        """
+                        
+                        // Execute the cleanup script remotely
+                        sh """
+                            ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                                ${cleanupScript}
+                            '
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Remote Server') {
+            steps {
+                echo 'Deploying Docker container to remote server...'
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: 'vm2-ssh', // Use the ID of the SSH credentials
+                    keyFileVariable: 'SSH_KEY'
+                )]) {
+                    script {
+                        // Define your docker-compose content as a string
+                        def dockerComposeContent = """
+version: '3.8'
+services:
+  mysql-db:
+    image: mysql:8.0
+    container_name: mysql-db
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+      MYSQL_DATABASE: mydb
+    ports:
+      - "3306:3306"
+    networks:
+      - app-network
+
+  spring-boot-app:
+    image: yosrimlik/spring-boot-first:latest
+    container_name: spring-boot-app
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/mydb?serverTimezone=UTC&createDatabaseIfNotExist=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ''
+    depends_on:
+      - mysql-db
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 10
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+"""
+                // Save the docker-compose.yml file to the remote server
+                writeFile file: 'docker-compose.yml', text: dockerComposeContent
+                
+                sh """
+                    scp -i ${SSH_KEY} -o StrictHostKeyChecking=no docker-compose.yml ${REMOTE_USER}@${REMOTE_HOST}:~
+                    ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no ${REMOTE_USER}@${REMOTE_HOST} '
+                        docker-compose down || true
+                        docker-compose pull
+                        docker-compose up -d
+                    '
+                """
+            }
+        }
+    }
+}
+
+
+    }
+
+    post {
+        success {
+            echo 'Deployment successful!'
+        }
+        failure {
+            echo 'Deployment failed!'
+        }
+    }
+}
