@@ -26,12 +26,13 @@ pipeline {
             steps {
                 sh 'cd spring-boot-server && mvn clean package -DskipTests'  // Build the Spring Boot application
                 sh 'ls'
-                sh 'cd ..'
+                //sh 'cd ..'
             }
         }
 
         stage('Build Docker Image') {
             steps {
+                sh 'ls'
                 sh 'docker-compose build' // Build the Docker image using docker-compose
             }
         }
