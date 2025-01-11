@@ -18,7 +18,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/YosriMlik/spring-boot-first.git' // Your Git repo URL
+                git branch: 'main', url: 'https://github.com/YosriMlik/jenkins-exam.git' // Your Git repo URL
             }
         }
 
@@ -70,7 +70,7 @@ pipeline {
                             fi
 
                             # Remove unused Docker images related to your services
-                            docker rmi -f yosrimlik/spring-boot-first:latest || true
+                            docker rmi -f yosrimlik/jenkins-exam-backend:latest || true
 
                             # Clean up unused volumes and networks
                             docker volume prune -f
@@ -105,19 +105,19 @@ services:
     container_name: mysql-db
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
-      MYSQL_DATABASE: mydb
+      MYSQL_DATABASE: testdb
     ports:
       - "3306:3306"
     networks:
       - app-network
 
   spring-boot-app:
-    image: yosrimlik/spring-boot-first:latest
+    image: yosrimlik/jenkins-exam-backend:latest
     container_name: spring-boot-app
     ports:
       - "8083:8083"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/mydb?serverTimezone=UTC&createDatabaseIfNotExist=true
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql-db:3306/testdb?serverTimezone=UTC&createDatabaseIfNotExist=true
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: ''
     depends_on:
